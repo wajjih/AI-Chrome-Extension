@@ -1,0 +1,30 @@
+{
+    "name": "Chrome Extension Template",
+    "version": "1.0.0",
+    "description": "Very basic starter code for building your chrome extension",
+    "manifest_version": 3,
+    "action": {
+        "default_popup": "popup/index.html"
+    },
+    "icons": {
+        "16": "assets/icon.png",
+        "32": "assets/icon.png",
+        "48": "assets/icon.png",
+        "128": "assets/icon.png"
+    },
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["scripts/content.js"]
+        }
+    ],
+    "permissions": [
+        "storage"
+    ],
+    "web_accessible_resources": [{
+        "resources": [
+            "assets/icon.png"
+        ],
+        "matches": ["<all_urls>"]
+    }]
+}
