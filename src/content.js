@@ -1,79 +1,133 @@
 // Function to fetch suggestions from an AI service
 async function fetchSuggestions(text) {
   return new Promise((resolve, reject) => {
-    chrome.storage.sync.get("apiKey", async function (items) {
-      const apiKey = items.apiKey;
-      if (!apiKey) {
-        reject("API Key not found");
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          "https://api.your-ai-service.com/suggest",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({ text }),
+    chrome.runtime.sendMessage({ type: "getApiKey" }, async (response) => {
+      if (response && response.apiKey) {
+        const apiKey = response.apiKey;
+        console.debug("API Key retrieved:", apiKey.substring(0, 4) + "*****");
+        try {
+          const apiResponse = await fetch(
+            "https://api.openai.com/v1/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: "gpt-3.5-turbo", // Specify your desired model here
+                prompt: text,
+                max_tokens: 50,
+                n: 1,
+                stop: null,
+              }),
+            }
+          );
+          if (!apiResponse.ok) {
+            const errorData = await apiResponse.json().catch(() => null);
+            console.error("API Error:", apiResponse.status, errorData);
+            reject(
+              `API request failed with status ${apiResponse.status}: ${
+                (errorData && errorData.error && errorData.error.message) ||
+                "Unknown error"
+              }`
+            );
+            return;
           }
-        );
-        const data = await response.json();
-        resolve(data.suggestions);
-      } catch (error) {
-        reject(error);
+          const data = await apiResponse.json();
+          if (
+            !data.choices ||
+            !Array.isArray(data.choices) ||
+            data.choices.length < 1
+          ) {
+            reject("No suggestions received from the API.");
+            return;
+          }
+          const suggestion = data.choices[0].text.trim();
+          console.debug("Suggestion received:", suggestion);
+          resolve(suggestion);
+        } catch (error) {
+          console.error("Fetch Error:", error);
+          reject("An error occurred while fetching suggestions.");
+        }
+      } else {
+        console.error("API key not found");
+        reject("API Key not found");
       }
     });
   });
 }
 
-// Function to show suggestions
-function showSuggestions(textarea, suggestions) {
-  // Create a suggestion box if it doesn't exist
-  let suggestionBox = document.getElementById("ai-suggestion-box");
-  if (!suggestionBox) {
-    suggestionBox = document.createElement("div");
-    suggestionBox.id = "ai-suggestion-box";
-    suggestionBox.style.position = "absolute";
-    suggestionBox.style.backgroundColor = "#fff";
-    suggestionBox.style.border = "1px solid #ccc";
-    suggestionBox.style.zIndex = "1000";
-    document.body.appendChild(suggestionBox);
+// This function updates (or creates) an element overlaying the textarea that shows the suggestion
+function updateInlineSuggestion(textarea, suggestion) {
+  let inlineSuggestion = document.getElementById("inline-suggestion");
+  if (!inlineSuggestion) {
+    inlineSuggestion = document.createElement("div");
+    inlineSuggestion.id = "inline-suggestion";
+    // Style the suggestion as gray text and ensure it doesn't capture pointer events
+    inlineSuggestion.style.position = "absolute";
+    inlineSuggestion.style.color = "gray";
+    inlineSuggestion.style.pointerEvents = "none";
+    // Use the same font settings as the textarea
+    const computed = getComputedStyle(textarea);
+    inlineSuggestion.style.fontFamily = computed.fontFamily;
+    inlineSuggestion.style.fontSize = computed.fontSize;
+    inlineSuggestion.style.lineHeight = computed.lineHeight;
+    document.body.appendChild(inlineSuggestion);
   }
 
-  // Position the suggestion box
+  // Position the inline suggestion relative to the textarea's top-left
   const rect = textarea.getBoundingClientRect();
-  suggestionBox.style.top = `${rect.bottom + window.scrollY}px`;
-  suggestionBox.style.left = `${rect.left + window.scrollX}px`;
+  inlineSuggestion.style.top = rect.top + window.scrollY + "px";
+  inlineSuggestion.style.left = rect.left + window.scrollX + "px";
 
-  // Populate the suggestion box
-  suggestionBox.innerHTML = suggestions.map((s) => `<div>${s}</div>`).join("");
+  // Only show suggestion if it completes what the user already typed
+  const currentText = textarea.value;
+  if (suggestion.startsWith(currentText)) {
+    console.log("Suggestion:", suggestion);
+    inlineSuggestion.textContent = suggestion;
+  } else {
+    inlineSuggestion.textContent = "";
+  }
 }
 
-// Event listener for text areas
+// Listen for input events on textareas (or contentEditable elements)
 document.addEventListener("input", async (event) => {
-  if (event.target.tagName.toLowerCase() === "textarea") {
-    const text = event.target.value;
+  const target = event.target;
+  const targetTag = target.tagName.toLowerCase();
+  const isEditable = target.isContentEditable;
+
+  if (targetTag === "textarea" || isEditable) {
+    // For contentEditable, you may choose innerText instead of value
+    const text = target.value || target.innerText;
     try {
-      const suggestions = await fetchSuggestions(text);
-      showSuggestions(event.target, suggestions);
+      let suggestions = await fetchSuggestions(text);
+      // If suggestions is an array, use the first suggestion
+      if (Array.isArray(suggestions) && suggestions.length > 0) {
+        suggestions = suggestions[0];
+      }
+      updateInlineSuggestion(target, suggestions);
     } catch (error) {
       console.error("Error fetching suggestions:", error);
     }
   }
 });
 
-// Event listener to handle suggestion selection
+// Listen for keydown events to accept (Tab) or dismiss (Space) the suggestion
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Tab") {
-    const suggestionBox = document.getElementById("ai-suggestion-box");
-    if (suggestionBox && suggestionBox.firstChild) {
+  const target = event.target;
+  const targetTag = target.tagName.toLowerCase();
+  if (targetTag === "textarea") {
+    const inlineSuggestion = document.getElementById("inline-suggestion");
+    if (!inlineSuggestion) return;
+    if (event.key === "Tab") {
       event.preventDefault();
-      const textarea = document.activeElement;
-      textarea.value += suggestionBox.firstChild.textContent;
-      suggestionBox.remove();
+      // Accept the suggestion by updating the textarea's content to the full suggestion
+      target.value = inlineSuggestion.textContent;
+      inlineSuggestion.textContent = "";
+    } else if (event.key === " ") {
+      // Cancel/dismiss the suggestion on Space
+      inlineSuggestion.textContent = "";
     }
   }
 });

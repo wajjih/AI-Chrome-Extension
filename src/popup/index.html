@@ -7,13 +7,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chrome Extension Template</title>
+    <title>Popup - Set API Key</title>
+    <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>AI Chrome Extension</h1>
-    <p>This is a popup for the chrome extension</p>
-    <button>Click me!</button>
-    <link rel="stylesheet" href="index.css" />
-    <script src="script.js"></script>
+    <h1>Set Your API Key</h1>
+    <form id="popup-form">
+      <label for="api-key">API Key:</label>
+      <input
+        type="text"
+        id="api-key"
+        name="api-key"
+        placeholder="Enter your API key"
+        required
+      />
+      <br />
+      <input type="submit" value="Save" />
+    </form>
+    <script src="popup.js"></script>
   </body>
 </html>
