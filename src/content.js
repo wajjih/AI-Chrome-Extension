@@ -7,7 +7,7 @@ async function fetchSuggestions(text) {
         console.debug("API Key retrieved:", apiKey.substring(0, 4) + "*****");
         try {
           const apiResponse = await fetch(
-            "https://api.openai.com/v1/completions",
+            "https://api.openai.com/v1/chat/completions",
             {
               method: "POST",
               headers: {
@@ -15,8 +15,18 @@ async function fetchSuggestions(text) {
                 Authorization: `Bearer ${apiKey}`,
               },
               body: JSON.stringify({
-                model: "gpt-3.5-turbo", // Specify your desired model here
-                prompt: text,
+                model: "gpt-3.5-turbo",
+                messages: [
+                  {
+                    role: "system",
+                    content:
+                      "You are a helpful assistant that completes sentences.",
+                  },
+                  {
+                    role: "user",
+                    content: `Complete the following sentence: "${text}"`,
+                  },
+                ],
                 max_tokens: 50,
                 n: 1,
                 stop: null,
@@ -43,7 +53,7 @@ async function fetchSuggestions(text) {
             reject("No suggestions received from the API.");
             return;
           }
-          const suggestion = data.choices[0].text.trim();
+          const suggestion = data.choices[0].message.content.trim();
           console.debug("Suggestion received:", suggestion);
           resolve(suggestion);
         } catch (error) {
@@ -68,6 +78,8 @@ function updateInlineSuggestion(textarea, suggestion) {
     inlineSuggestion.style.position = "absolute";
     inlineSuggestion.style.color = "gray";
     inlineSuggestion.style.pointerEvents = "none";
+    inlineSuggestion.style.backgroundColor = "white"; // Ensure background is white to overlay text
+    inlineSuggestion.style.zIndex = "1000"; // Ensure it's on top
     // Use the same font settings as the textarea
     const computed = getComputedStyle(textarea);
     inlineSuggestion.style.fontFamily = computed.fontFamily;
@@ -76,16 +88,50 @@ function updateInlineSuggestion(textarea, suggestion) {
     document.body.appendChild(inlineSuggestion);
   }
 
-  // Position the inline suggestion relative to the textarea's top-left
-  const rect = textarea.getBoundingClientRect();
+  // Create a hidden div to mirror the textarea content and calculate the caret position
+  let mirrorDiv = document.getElementById("mirror-div");
+  if (!mirrorDiv) {
+    mirrorDiv = document.createElement("div");
+    mirrorDiv.id = "mirror-div";
+    mirrorDiv.style.position = "absolute";
+    mirrorDiv.style.whiteSpace = "pre-wrap";
+    mirrorDiv.style.visibility = "hidden";
+    mirrorDiv.style.pointerEvents = "none";
+    document.body.appendChild(mirrorDiv);
+  }
+
+  // Copy the textarea styles to the mirror div
+  const computed = getComputedStyle(textarea);
+  mirrorDiv.style.fontFamily = computed.fontFamily;
+  mirrorDiv.style.fontSize = computed.fontSize;
+  mirrorDiv.style.lineHeight = computed.lineHeight;
+  mirrorDiv.style.padding = computed.padding;
+  mirrorDiv.style.border = computed.border;
+  mirrorDiv.style.width = computed.width;
+
+  // Copy the textarea content to the mirror div
+  const text = textarea.value || "";
+  const caretPosition = textarea.selectionStart || 0;
+  const beforeCaret = text.substring(0, caretPosition);
+  const afterCaret = text.substring(caretPosition);
+  mirrorDiv.textContent = beforeCaret;
+
+  // Create a span to mark the caret position
+  const caretSpan = document.createElement("span");
+  caretSpan.textContent = "|";
+  mirrorDiv.appendChild(caretSpan);
+  mirrorDiv.appendChild(document.createTextNode(afterCaret));
+
+  // Position the inline suggestion relative to the caret position
+  const rect = caretSpan.getBoundingClientRect();
   inlineSuggestion.style.top = rect.top + window.scrollY + "px";
   inlineSuggestion.style.left = rect.left + window.scrollX + "px";
 
   // Only show suggestion if it completes what the user already typed
-  const currentText = textarea.value;
+  const currentText = textarea.value || "";
   if (suggestion.startsWith(currentText)) {
     console.log("Suggestion:", suggestion);
-    inlineSuggestion.textContent = suggestion;
+    inlineSuggestion.textContent = suggestion.slice(currentText.length);
   } else {
     inlineSuggestion.textContent = "";
   }
@@ -99,7 +145,7 @@ document.addEventListener("input", async (event) => {
 
   if (targetTag === "textarea" || isEditable) {
     // For contentEditable, you may choose innerText instead of value
-    const text = target.value || target.innerText;
+    const text = target.value || target.innerText || "";
     try {
       let suggestions = await fetchSuggestions(text);
       // If suggestions is an array, use the first suggestion
@@ -123,7 +169,7 @@ document.addEventListener("keydown", (event) => {
     if (event.key === "Tab") {
       event.preventDefault();
       // Accept the suggestion by updating the textarea's content to the full suggestion
-      target.value = inlineSuggestion.textContent;
+      target.value += inlineSuggestion.textContent;
       inlineSuggestion.textContent = "";
     } else if (event.key === " ") {
       // Cancel/dismiss the suggestion on Space
