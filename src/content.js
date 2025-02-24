@@ -78,8 +78,9 @@ function updateInlineSuggestion(textarea, suggestion) {
     inlineSuggestion.style.position = "absolute";
     inlineSuggestion.style.color = "gray";
     inlineSuggestion.style.pointerEvents = "none";
-    inlineSuggestion.style.backgroundColor = "white"; // Ensure background is white to overlay text
+    inlineSuggestion.style.backgroundColor = "transparent"; // Use transparent background
     inlineSuggestion.style.zIndex = "1000"; // Ensure it's on top
+    inlineSuggestion.style.whiteSpace = "pre-wrap"; // Preserve whitespace and line breaks
     // Use the same font settings as the textarea
     const computed = getComputedStyle(textarea);
     inlineSuggestion.style.fontFamily = computed.fontFamily;
@@ -123,9 +124,12 @@ function updateInlineSuggestion(textarea, suggestion) {
   mirrorDiv.appendChild(document.createTextNode(afterCaret));
 
   // Position the inline suggestion relative to the caret position
-  const rect = caretSpan.getBoundingClientRect();
-  inlineSuggestion.style.top = rect.top + window.scrollY + "px";
-  inlineSuggestion.style.left = rect.left + window.scrollX + "px";
+  const textareaRect = textarea.getBoundingClientRect();
+  const caretRect = caretSpan.getBoundingClientRect();
+  inlineSuggestion.style.top =
+    textareaRect.top + caretRect.top + window.scrollY + "px";
+  inlineSuggestion.style.left =
+    textareaRect.left + caretRect.left + window.scrollX + "px";
 
   // Only show suggestion if it completes what the user already typed
   const currentText = textarea.value || "";
@@ -144,12 +148,11 @@ document.addEventListener("input", async (event) => {
   const isEditable = target.isContentEditable;
 
   if (targetTag === "textarea" || isEditable) {
-    // For contentEditable, you may choose innerText instead of value
-    const text = target.value || target.innerText || "";
+    const text =
+      targetTag === "textarea" ? target.value : target.innerText || "";
     try {
       let suggestions = await fetchSuggestions(text);
-      // If suggestions is an array, use the first suggestion
-      if (Array.isArray(suggestions) && suggestions.length > 0) {
+      if (Array.isArray(suggestions)) {
         suggestions = suggestions[0];
       }
       updateInlineSuggestion(target, suggestions);
@@ -163,13 +166,18 @@ document.addEventListener("input", async (event) => {
 document.addEventListener("keydown", (event) => {
   const target = event.target;
   const targetTag = target.tagName.toLowerCase();
-  if (targetTag === "textarea") {
+  if (targetTag === "textarea" || target.isContentEditable) {
     const inlineSuggestion = document.getElementById("inline-suggestion");
-    if (!inlineSuggestion) return;
+    if (!inlineSuggestion || !inlineSuggestion.textContent) return;
+
     if (event.key === "Tab") {
       event.preventDefault();
       // Accept the suggestion by updating the textarea's content to the full suggestion
-      target.value += inlineSuggestion.textContent;
+      if (targetTag === "textarea") {
+        target.value += inlineSuggestion.textContent;
+      } else {
+        target.innerText += inlineSuggestion.textContent;
+      }
       inlineSuggestion.textContent = "";
     } else if (event.key === " ") {
       // Cancel/dismiss the suggestion on Space
