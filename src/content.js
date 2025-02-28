@@ -1,3 +1,140 @@
+// Track active element and current suggestion
+let activeElement = null;
+let currentSuggestion = null;
+
+// Helper function to check if an element is a valid input field
+function isValidInputField(element) {
+  return (
+    element.tagName === "INPUT" ||
+    element.tagName === "TEXTAREA" ||
+    element.isContentEditable
+  );
+}
+
+// Helper function to get the content of an input field
+function getEditorContent(element) {
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    return element.value;
+  } else if (element.isContentEditable) {
+    return element.textContent || "";
+  }
+  return "";
+}
+
+// Helper function to get the cursor position in an input field
+function getCursorPosition(element) {
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    return element.selectionStart || 0;
+  } else if (element.isContentEditable) {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      return range.startOffset;
+    }
+  }
+  return 0;
+}
+
+// Helper function to update the content of an input field
+function updateEditorContent(element, newContent, cursorPosition) {
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    element.value = newContent;
+    element.selectionStart = cursorPosition;
+    element.selectionEnd = cursorPosition;
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  } else if (element.isContentEditable) {
+    element.textContent = newContent;
+    const selection = window.getSelection();
+    if (selection) {
+      const range = document.createRange();
+      range.setStart(element.firstChild || element, cursorPosition);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+}
+
+// Display inline suggestion
+function showSuggestion(element, suggestion) {
+  const rect = element.getBoundingClientRect();
+  const suggestionDiv = document.createElement("div");
+  suggestionDiv.className = "ai-suggestion";
+  suggestionDiv.textContent = suggestion;
+  suggestionDiv.style.position = "absolute";
+  suggestionDiv.style.top = `${rect.bottom}px`;
+  suggestionDiv.style.left = `${rect.left}px`;
+  suggestionDiv.style.zIndex = "999999";
+  suggestionDiv.style.backgroundColor = "#f0f0f0";
+  suggestionDiv.style.padding = "4px";
+  suggestionDiv.style.border = "1px solid #ccc";
+  document.body.appendChild(suggestionDiv);
+
+  // Store the current suggestion
+  currentSuggestion = suggestion;
+}
+
+// Handle Tab key for completion
+function handleTabCompletion(element) {
+  if (currentSuggestion) {
+    const content = getEditorContent(element);
+    const cursorPos = getCursorPosition(element);
+    const textBeforeCursor = content.slice(0, cursorPos);
+    const textAfterCursor = content.slice(cursorPos);
+
+    // Insert the suggestion
+    const newContent = textBeforeCursor + currentSuggestion + textAfterCursor;
+    const newCursorPos = cursorPos + currentSuggestion.length;
+
+    updateEditorContent(element, newContent, newCursorPos);
+
+    // Clear the suggestion
+    document.querySelector(".ai-suggestion")?.remove();
+    currentSuggestion = null;
+  }
+}
+
+// Listen for input events
+document.addEventListener("input", (event) => {
+  const target = event.target;
+  if (isValidInputField(target)) {
+    activeElement = target;
+    const content = getEditorContent(target);
+    const cursorPos = getCursorPosition(target);
+    const textBeforeCursor = content.slice(0, cursorPos);
+
+    // Send a message to the background script to fetch a suggestion
+    chrome.runtime.sendMessage(
+      {
+        type: "FETCH_SUGGESTION",
+        text: textBeforeCursor,
+      },
+      (response) => {
+        if (response.suggestion) {
+          showSuggestion(target, response.suggestion);
+        }
+      }
+    );
+  }
+});
+
+// Listen for Tab key
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Tab" && activeElement) {
+    event.preventDefault();
+    handleTabCompletion(activeElement);
+  }
+});
+
 // Function to fetch suggestions from an AI service
 async function fetchSuggestions(text) {
   return new Promise((resolve, reject) => {

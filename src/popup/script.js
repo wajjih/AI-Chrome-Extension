@@ -1,7 +1,6 @@
-// this file is where you can add javascript to the popup
-
 const btn = document.querySelector("button");
 
+// Test button to send a message to the content script
 btn.addEventListener("click", () => {
   alert("Button clicked");
   console.log("Button clicked SKIBIDI TOILET");
@@ -16,6 +15,7 @@ btn.addEventListener("click", () => {
   });
 });
 
+// Save API key to Chrome Storage
 document
   .getElementById("popup-form")
   .addEventListener("submit", function (event) {
@@ -30,3 +30,19 @@ document
       });
     }
   });
+
+// Test AI suggestion functionality
+document.getElementById("test-suggestion")?.addEventListener("click", () => {
+  const testText = "This is a test input";
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.sendMessage(
+      tabs[0].id,
+      { type: "FETCH_SUGGESTION", text: testText },
+      (response) => {
+        if (response.suggestion) {
+          console.log("AI Suggestion:", response.suggestion);
+        }
+      }
+    );
+  });
+});
